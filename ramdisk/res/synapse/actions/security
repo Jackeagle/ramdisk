@@ -1,0 +1,16 @@
+# By GuNDaL
+
+BB=/sbin/busybox;
+
+case $1 in
+selinux)
+$BB mount -t rootfs -o remount,rw rootfs;
+Status=/res/synapse/actions/SELinux
+  if [ $2 == Enforcing ]; then
+	    setenforce 1;
+fi
+  if [ $2 == Permissive ]; then
+	    setenforce 0;
+fi
+  ;;
+esac;
