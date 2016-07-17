@@ -32,6 +32,7 @@
 baseband=`getprop ro.baseband`
 sgltecsfb=`getprop persist.radio.sglte_csfb`
 datamode=`getprop persist.data.mode`
+netmgr=`getprop ro.use_data_netmgrd`
 multisimslotcnt=`getprop ro.multisim.simslotcount`
 
 case "$baseband" in
@@ -60,22 +61,22 @@ case "$baseband" in
           setprop persist.radio.multisim.config dsda
     esac
 
-    multisim=`getprop persist.radio.multisim.config`
+#    multisim=`getprop persist.radio.multisim.config`
 
-    if [ "$multisim" = "dsds" ] || [ "$multisim" = "dsda" ]; then
-        stop ril-daemon
-        start ril-daemon
-        start ril-daemon1
-    elif [ "$multisim" = "tsts" ]; then
-        stop ril-daemon
-        start ril-daemon
-        start ril-daemon1
-        start ril-daemon2
-    elif [ "$multisimslotcnt" = "2" ]; then
-        stop ril-daemon
-        start ril-daemon
-        start ril-daemon1
-    fi
+#    if [ "$multisim" = "dsds" ] || [ "$multisim" = "dsda" ]; then
+#        stop ril-daemon
+#        start ril-daemon
+#        start ril-daemon1
+#    elif [ "$multisim" = "tsts" ]; then
+#        stop ril-daemon
+#        start ril-daemon
+#        start ril-daemon1
+#        start ril-daemon2
+#    elif [ "$multisimslotcnt" = "2" ]; then
+#        stop ril-daemon
+#        start ril-daemon
+#        start ril-daemon1
+#    fi
 
     case "$datamode" in
         "tethered")
@@ -84,7 +85,14 @@ case "$baseband" in
             ;;
         "concurrent")
             start qti
-            start netmgrd
+            if [ "$netmgr" = "true" ]; then
+                start netmgrd
+            fi
+            ;;
+        *)
+            if [ "$netmgr" = "true" ]; then
+                start netmgrd
+            fi
             ;;
     esac
 esac

@@ -33,7 +33,11 @@ on early-init
     mkdir /system 0777 root root
     symlink /data/tombstones /tombstones
 
+#on post-fs
+#    export LD_PRELOAD libNimsWrap.so
+
 on fs
+    # wait /dev/block/bootdevice
     mount_all fstab.qcom
 
     # Keeping following partitions outside fstab file. As user may not have
@@ -57,24 +61,17 @@ on fs
     chmod 0771 /efs
     rm -rf /efs/dmverity
     restorecon -R /efs
-	
-on fs_sec_selinux
-	
-	wait /dev/block/bootdevice/by-name/apnhlos
-    mount vfat /dev/block/bootdevice/by-name/apnhlos /firmware ro shortname=lower,uid=1000,gid=1000,dmask=227,fmask=337,context=u:object_r:firmware:s0
-
-	wait /dev/block/bootdevice/by-name/modem
-    mount vfat /dev/block/bootdevice/by-name/modem /firmware-modem ro shortname=lower,uid=1000,gid=1000,dmask=227,fmask=337,context=u:object_r:firmware:s0
 
 	
-on fs_selinux
-
     wait /dev/block/bootdevice/by-name/apnhlos
-    mount vfat /dev/block/bootdevice/by-name/apnhlos /firmware ro shortname=lower,uid=1000,gid=1000,dmask=227,fmask=337
+    mount vfat /dev/block/bootdevice/by-name/apnhlos /firmware ro shortname=lower,uid=1000,gid=1000,dmask=227,fmask=337,context=u:object_r:firmware_file:s0
+
+    wait /dev/block/bootdevice/by-name/modem
+    mount vfat /dev/block/bootdevice/by-name/modem /firmware-modem ro shortname=lower,uid=1000,gid=1000,dmask=227,fmask=337,context=u:object_r:firmware_file:s0
+
+    #write /sys/kernel/boot_adsp/boot 1
     
     wait /dev/block/bootdevice/by-name/modem
-    mount vfat /dev/block/bootdevice/by-name/modem /firmware-modem ro shortname=lower,uid=1000,gid=1000,dmask=227,fmask=337
-
 	
     #write /sys/kernel/boot_adsp/boot 1
 
@@ -86,17 +83,18 @@ on post-fs-data
     mkdir /tombstones/dsps 0771 system system
     mkdir /persist/data/sfs 0700 system system
     mkdir /persist/data/tz 0700 system system
-
+    mkdir /data/misc/dts 0770 media audio
 #start camera server as daemon
 service qcamerasvr /system/bin/mm-qcamera-daemon
     class main
     user camera
     group camera system inet input graphics
 
-#enable zram
-on property:ro.config.zram=true
-    swapon_all fstab.qcom
-    write /proc/sys/vm/swappiness 100
+#start gpu_snapshotd for gpu hang issue debugging
+service gpu_snapshotd /system/bin/gpu_snapshotd -s /sys/class/kgsl/kgsl-3d0/snapshot -d /data/log/ -m 0700
+    class late_start
+    user system
+    group system  
 
 # Allow usb charging to be disabled peristently
 on property:persist.usb.chgdisabled=1
@@ -115,6 +113,9 @@ service qrngp /system/bin/qrngp -f
 on property:sys.boot_completed=1
    start qrngp
 
+on property:sys.boot_completed=1
+   write /proc/iccc_ready 1
+
 service qseecomd /system/bin/qseecomd
    class core
    user root
@@ -129,12 +130,12 @@ service qseecomd /system/bin/qseecomd
 #   user root
 #   disabled
 
-service perfd /system/bin/perfd
+service perfd /system/vendor/bin/perfd
    class main
    user root
    disabled
 
-service thermal-engine /system/bin/thermal-engine
+service thermal-engine /system/vendor/bin/thermal-engine
    class main
    user root
    socket thermal-send-client stream 0666 system system
@@ -192,7 +193,7 @@ on charger
     chmod 0664 /sys/class/power_supply/bms/current_now
     chmod 0664 /sys/class/power_supply/bms/voltage_ocv
     start vm_bms
-    load_all_props
+    load_system_props
     start qcom-post-boot
 
 service imsqmidaemon /system/bin/imsqmidaemon
@@ -201,20 +202,15 @@ service imsqmidaemon /system/bin/imsqmidaemon
     socket ims_qmid stream 0660 system radio
     group radio net_raw log qcom_diag
 
-service imsdatadaemon /system/bin/imsdatadaemon
-    class main
-    user system
-    socket ims_datad stream 0660 system radio
-    group system wifi radio inet net_raw log qcom_diag net_admin
-    disabled
+#service imsdatadaemon /system/bin/imsdatadaemon
+#    class main
+#    user system
+#    socket ims_datad stream 0660 system radio
+#    group system wifi radio inet net_raw log qcom_diag net_admin
+#    disabled
 
 on property:sys.ims.QMI_DAEMON_STATUS=1
     start imsdatadaemon
-
-service qmi_sfs_server /system/bin/qmi_sfs_server
-   class core
-   user system
-   group system net_raw
 
 service ims_rtp_daemon /system/bin/ims_rtp_daemon
    class main
@@ -223,10 +219,33 @@ service ims_rtp_daemon /system/bin/ims_rtp_daemon
    group radio net_raw diag qcom_diag log
    disabled
 
+service imscmservice /system/bin/imscmservice
+   class main
+   user system
+   group radio net_raw diag qcom_diag log
+   disabled
+
 on property:sys.ims.DATA_DAEMON_STATUS=1
     start ims_rtp_daemon
+    start imscmservice
 
+service hbtp /system/vendor/bin/hbtp_daemon
+   class main
+   user system
+   group system
+   disabled
 # Secure Storage startup
+#service secure_storage /system/bin/secure_storage_daemon
+#    class core
+#    user system
+#    group system
+#    disabled
+service hbtp /system/vendor/bin/hbtp_daemon
+   class main
+   user system
+   group system
+   disabled
+
 service secure_storage /system/bin/secure_storage_daemon
     class core
     user system
@@ -254,3 +273,9 @@ service TvoutService_C /system/bin/bintvoutservice
     group graphics
 on property:ro.SecEDS.enable=false
     stop TvoutService_C
+
+service dts_configurator /system/bin/dts_configurator
+   class main
+   user system
+   group system
+   oneshot
